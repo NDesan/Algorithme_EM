@@ -1,0 +1,188 @@
+---
+title: "EM"
+author: "Nicolas Desan, François Pedeboy"
+date: "2022-12-01"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Simulation
+
+1) On simule un échantillon de taille n=100 de loi de Poisson de paramètre $\lambda = 3$ :
+```{r, include=TRUE}
+n1<-100
+lambda1<-3
+
+x<-rpois(n1,lambda1)
+
+print(x)
+```
+
+2) On simule un échantillon de taille $n_2=100$ de loi de Poisson de paramètre $\lambda_2 = 15$ :
+```{r, include=TRUE}
+n2<-200
+lambda2<-15
+
+x2<-rpois(n2,lambda2)
+
+print(x2)
+```
+
+3) On simule un vecteur de 300 valeurs entières (100 "1", suivi de 200 "2") : 
+```{r, include=TRUE}
+x3<-c()
+
+for(i in 1:n1){
+  x3[i]<-1
+}
+
+for(i in 1:n2){
+  x3[i]<-2
+}
+
+print(x3)
+
+```
+
+4) On simule un  mélange de lois de Poisson à deux composantes $\lambda_1 = 3$ et $\lambda_2 = 15$ ainsi que des poids $\pi_1 = 0.4$ et $\pi_2 = 0.6$ :
+
+```{r, include=FALSE}
+library(tidyverse)
+
+
+```
+
+```{r, include=TRUE}
+p1<-0.4
+p2<-0.6
+
+P <-function(x){
+  y<-0
+  y<-p1*exp(-lambda1)*(lambda1^x)/factorial(x) + p2*exp(-lambda2)*(lambda2^x)/factorial(x)
+  return(y)
+}
+
+y_sim<-c()
+
+for(i in 0:30){
+  y_sim[i+1]<-P(i)
+}
+
+data_sim<-data.frame(x=seq(0,30),y=y_sim)
+
+ggplot(data = data_sim, aes(x = x, y = y)) + geom_bar(stat="identity")
+
+```
+
+## Algorithme EM pour un mélange de lois de Poisson à K composantes
+
+Il est important de remarquer que la moyenne d'une loi de Poisson de paramètre $\lambda$ vaut $\lambda$. Ainsi, l'algorithme EM qui généralement est appliqué sur des lois gaussiennes en réévaluant les valeurs des $\mu_i$ à chaque itération est aussi appliquable dans l'étude d'un mélange de lois de Poisson de manière similaire en réévaluant les $\lambda_i$ (du modèle de Poisson) de la même manière que les $\mu_i$ (du modèle gaussien). 
+
+1) On a l'initialisation de l'algorithme EM qui prend en argument un échantillon X ainsi que K le nombre de composantes voulues et qui renvoie l'ensemble des $\pi_i = 1/K$ ainsi que des valeurs initiales aléatoires des $\lambda_i$ :
+
+```{r, include=TRUE}
+
+Initialisation<-function(X,K=2){
+ poids<-c()
+ for(i in 1:K){
+   poids[i]<-1/K
+ }
+ 
+ lambdas<-X[sample(1:nrow(X),K),1]
+ return(list(pis=poids,lambdas=lambdas))
+}
+```
+
+2) Pour l'étape E on cherche à calculer la matrice qui contient l'ensemble des nouveaux poids $\pi_i$ pour chacune des valeurs de l'échantillon qu'on manipule. Ces nouveaux poids sont calculés ainsi :
+
+$$
+\pi_{k.i}^{(r+1)}=\frac{\pi_{k.i}^{(r)}f_k(x_i,\theta_k^{(r)})}{\sum_{l=1}^{g}{\pi_{l.i}^{(r)}f_l(x_i,\theta_l^{(r)})}}
+$$
+avec :
+r l'itération correspondante, $\pi_{k.i}$ le poids de la i-ème valeur dans le k-ème cluster, g le nombre de clusters et $f_l$ la l-ème densité de loi de Poisson de paramètre $\theta_l$
+
+
+On obtient donc l'étape E de l'algorithme avec le code suivant qui prend en argument un échantillon X, des valeurs de $\lambda$ et $\pi$ contenues dans parameters (objet list) ainsi qu'une matrice T (initialisé à une matrice contenant que des 1 par la suite) et renvoie :
+
+```{r, include=TRUE}
+
+Etape_E<-function(X,parameters,T){
+ for (k in 1:ncol(T)){
+ T[,k]<-parameters$pis[k]*dpois(unlist(X),lambda=parameters$lambdas[k])
+ }
+ return(T=t(apply(T,1,function(x){x/sum(x)})))
+}
+
+```
+
+3) L'étape de maximisation M consiste à recalculer les différents $\lambda$ et $\pi$ du modèle grâce à la matrice T obtenu précédemment lors de l'étape E. 
+
+Pour cela on calcule la moyenne empirique de l'ensemble des poids de chaque colonne de T pour obtenir la nouvelle valeur des $\pi$. 
+
+Pour obtenir la nouvelle valeur des $\lambda$ on effectue le calcul suivant :
+
+$\lambda_i = \frac{\sum_{j=1}^{n}{\pi_j x_j}}{\sum_{j=1}^{n}{\pi_j}}$
+
+avec :
+n la taille de l'échantillon X qu'on manipule et $\lambda_i$ la valeur de $\lambda$ du i_ème cluster.
+
+On obtient donc l'étape M avec le code suivant :
+
+```{r, include=TRUE}
+Etape_M<-function(X,T){
+ pis = apply(T,2,mean)
+ lambdas<-colSums(T*(as.matrix(X)%*%rbind(rep(1,K))))/colSums(T)
+ return(list(pis=pis,lambdas=lambdas))
+}
+
+```
+
+4) Le but de l'algorithme EM est de réaliser les étapes E et M et de calculer la différence entre les paramètres de l'étape r et r+1. On s'arrête lorsqu'on estime qu'il y a une convergence des paramètres.
+
+Dans un premier temps on réalise un échantillon X du mélange précédent de la manière suivante :
+
+```{r, include=TRUE}
+
+nks<-rmultinom(1,300,c(0.4,0.6))
+lambdas<-c(3,15)
+x1<-rpois(nks[1],lambda=lambdas[1])
+x2<-rpois(nks[2],lambda=lambdas[2])
+
+X<-data.frame(x=c(x1,x2))
+
+```
+
+On a donc l'algorithme EM : 
+
+```{r, include=TRUE}
+
+K<-2
+
+EM<-function(X,K){
+ parameters<-Initialisation(X,K)
+ parameters_tmp<-parameters
+ parameters_tmp$pis<-rep(1,K)
+ parameters_tmp$lambdas<-rep(1,K)
+ T<-matrix(1,nrow(X),K)
+ while(mean((unlist(parameters)-unlist(parameters_tmp))^2)>1e-16){
+ parameters_tmp<-parameters
+ T<-Etape_E(X,parameters,T)
+ parameters<-Etape_M(X,T)
+ }
+ print(parameters)
+ print(mean((unlist(parameters)-unlist(parameters_tmp))^2))
+ return(list(T=T,parameters=parameters))
+}
+
+```
+
+On obtient :
+
+```{r,include=TRUE,echo=FALSE}
+res.EM<-EM(X,2)
+```
