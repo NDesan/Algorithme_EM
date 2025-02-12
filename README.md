@@ -58,3 +58,10 @@ $$
 Où N est le nombre total d'observations.
 
 #### Algorithme Complet
+
+- **Initialisation** : Choisir des valeurs initiales pour $\pi_k$ et $\lambda_k$.
+- **Itération** :
+    - **Etape E** : Calculer $\gamma_{ik}$ pour chaque observation $x_i$ et chaque composante k.
+    - **Etape M** : Mettre à jour $\pi_{k}$ et $\lambda_{k}$ en utilisant les nouvelles responsabilités $\gamma_{ik}$.
+
+- **Convergence** : Répéter les étapes E et M jusqu'à ce que les paramètres convergent (c'est-à-dire que les changements dans les paramètres soient inférieurs à un seuil prédéfini).
